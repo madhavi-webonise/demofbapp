@@ -5,26 +5,19 @@ class FbImageUploadsController extends FbappdemoAppController {
     var $name = 'FbImageUploads';
     var $facebook = null;
     var $Fbsession = null;
+
     function beforeFilter() {
 
         parent::beforeFilter();
 
-        $this->Auth->allow('*');
-        App::import('Vendor', 'facebook', array('file' => 'facebook.php'));
-        // Create our Application instance (replace this with your appId and secret).
-        $this->facebook = new Facebook(array(
-                    'appId' => '147442695329648', //
-                    'secret' => 'afe006a0a4efd92bf5a84b0f83888ffe',
-                    'cookie' => true,
-        ));
-        $this->Fbsession =  $this->facebook->getSession();
+        $this->Fbsession = $this->facebook->getSession();
     }
 
     function index() {
-        
+
         $signed_request = $this->facebook->getSignedRequest();
         if (isset($signed_request['page']) && $signed_request['page']['liked'] == '1' && $signed_request['page']['id'] == '112999125469267') {
-            
+
             $pagelikeid = '1';
         } else {
             $pagelikeid = '0';
@@ -43,9 +36,17 @@ class FbImageUploadsController extends FbappdemoAppController {
     function add() {
 
         if (!empty($this->data)) {
+
+            
+
             $filedata = $this->data['FbImageUpload']['image_name'];
 
             if ($filedata['error'] == '0' && $this->__checkHeightAndWidth($filedata['tmp_name'])) {
+
+                $filesize = 2097152; //2MB
+
+                if($this->checkFileSize($filedata['tmp_name'],$filesize)){
+
 
                 $file = $this->upload_file($filedata, 'img/contest/image_gallery/');
 
@@ -58,8 +59,30 @@ class FbImageUploadsController extends FbappdemoAppController {
                         $this->data['FbImageUpload']['image_name'] = $file['urls']['0'];
                         $this->FbImageUpload->create();
                         if ($this->FbImageUpload->save($this->data)) {
-                            $this->Session->setFlash(__('The fb image upload has been saved', true));
-                            $this->redirect(array('action' => 'index'));
+
+                            $attachment = array(
+                                'message' => '',
+                                'name' => 'Social Photo Contest',
+                                'caption' => "Social Photo Contest",
+                                'link' => $this->nextUrl,
+                                'description' => $this->data['FbImageUpload']['name'] . ' Uploaded new photo in social contest',
+                                'picture' => FULL_BASE_URL . '/img/contest/image_gallery/150x150/' . $file['urls']['0'],
+                                'actions' => array(array('name' => 'Start Using',
+                                        'link' => $this->nextUrl))
+                            );
+                            try {
+
+                                $result = $this->facebook->api('/me/feed/', 'post', $attachment);
+                                if (!empty($result)) {
+                                    $this->Session->setFlash(__('The fb image upload has been saved and published on your wall', true));
+                                } else {
+                                    $this->Session->setFlash(__('The fb image upload has been saved. but unable to publish on your wall', true));
+                                }
+                            } catch (FacebookApiException $e) {
+                                $this->Session->setFlash(__('The fb image upload has been saved. but unable to publish on your wall', true));
+                            }
+
+                            $this->redirect(array('action' => 'successmessage'));
                         } else {
                             $this->Session->setFlash(__('The fb image upload could not be saved. Please, try again.', true));
                         }
@@ -69,31 +92,32 @@ class FbImageUploadsController extends FbappdemoAppController {
                 } else {
                     $this->Session->setFlash(__('Unable to upload file in selected destination.', true));
                 }
+              }else{
+                    $this->Session->setFlash(__('Please select file with maximum 2 MB size.', true));
+                }
             } else {
-                $this->Session->setFlash(__('Please select image to upload.', true));
+                $this->Session->setFlash(__('Please select image to with minimum 500x500 heigh and width and maximum 2MB size.', true));
             }
         }
 
-        
-       
         $me = null;
         $this->log('Session is ====== ');
         $this->log($this->Fbsession);
-        //pr($session);
-       // die;
+
         // Session based API call.
         if (!empty($this->Fbsession)) {
 
             try {
+
                 $me = $this->facebook->api('/me');
                 //if user clicks on cancel then user
                 //should be redirected to the home page
-                
+
                 if (empty($me)) {
+
                     $user_id = '';
                     $email = '';
                     $name = '';
-                    $pagelikeid = '1';
                 } else {
 
                     //check user present & login him
@@ -101,40 +125,36 @@ class FbImageUploadsController extends FbappdemoAppController {
                     $name = $me['name'];
                     if (isset($me['email'])) {
                         $email = $me['email'];
+                    } else {
+                        $email = '';
                     }
-                    $pagelikeid = '1';
                 }
                 $this->log($me);
                 $this->set(compact('user_id', 'email', 'name'));
             } catch (FacebookApiException $e) {
 
-                $this->nextUrl = FULL_BASE_URL . '/fbappdemo/fb_image_uploads/add';
-                $this->cancelUrl = FULL_BASE_URL . '/fbappdemo/fb_image_uploads/cancel';
                 $url = $this->facebook->getLoginUrl(array(
                             'req_perms' => 'user_birthday,email,read_stream,share_item,publish_stream,offline_access', //
-                            'next' => "http://www.facebook.com/pages/My-first-page/112999125469267?sk=app_147442695329648",
-                            'cancel_url' => "http://www.facebook.com/pages/My-first-page/112999125469267?sk=app_147442695329648",
+                            'next' => $this->nextUrl,
+                            'cancel_url' => $this->cancelUrl,
                             'display' => 'popup'
                         ));
                 echo "<script type='text/javascript'>top.location.href = '$url';</script>";
             }
         } else {
 
-            $this->nextUrl = FULL_BASE_URL . '/fbappdemo/fb_image_uploads/add';
-            $this->cancelUrl = FULL_BASE_URL . '/fbappdemo/fb_image_uploads/cancel';
             $url = $this->facebook->getLoginUrl(array(
                         'req_perms' => 'user_birthday,email,read_stream,share_item,publish_stream,offline_access', //
-                        'next' => "http://www.facebook.com/pages/My-first-page/112999125469267?sk=app_147442695329648",
-                        'cancel_url' => "http://www.facebook.com/pages/My-first-page/112999125469267?sk=app_147442695329648",
+                        'next' => $this->nextUrl,
+                        'cancel_url' => $this->cancelUrl,
                         'display' => 'popup'
                     ));
             echo ('<script type="text/javascript">top.location.href=\'' . $url . '\';</script>');
         }
     }
 
-    function cancel() {
-        echo "hello";
-        die;
+    function successmessage() {
+        
     }
 
     function edit($id = null) {
@@ -182,6 +202,19 @@ class FbImageUploadsController extends FbappdemoAppController {
             return false;
         } else {
             return true;
+        }
+    }
+
+    function checkFileSize($data, $fileSize=NULL) {
+
+        if (!empty($fileSize)) {
+            $getFileSize = filesize($data);//  $data['size'] / 1024;
+            
+            if ($getFileSize <= $fileSize) {
+                return true;
+            }else{
+               return false;
+            }
         }
     }
 
